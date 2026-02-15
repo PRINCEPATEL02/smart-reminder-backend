@@ -8,7 +8,8 @@ const {
     markTaskComplete,
     getTaskById,
     getTodayCompletedTasks,
-    resetDailyCompletions
+    resetDailyCompletions,
+    getStats
 } = require('../controllers/taskController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -19,13 +20,16 @@ router.route('/')
     .get(getTasks)
     .post(createTask);
 
+// Stats route must be before /:id route to avoid matching :id with 'stats'
+router.get('/stats', getStats);
+router.get('/completed/today', getTodayCompletedTasks);
+router.post('/reset-daily', resetDailyCompletions);
+
 router.route('/:id')
     .get(getTaskById)
     .put(updateTask)
     .delete(deleteTask);
 
 router.post('/:id/complete', markTaskComplete);
-router.get('/completed/today', getTodayCompletedTasks);
-router.post('/reset-daily', resetDailyCompletions);
 
 module.exports = router;

@@ -45,6 +45,12 @@ const taskSchema = mongoose.Schema(
             enum: ['Push', 'Sound', 'Both'],
             default: 'Push',
         },
+        reminderBefore: {
+            type: Number,
+            default: 5, // minutes before task time to send notification
+            min: 1,
+            max: 60,
+        },
         priority: {
             type: String,
             enum: ['Low', 'Medium', 'High', 'Critical'],

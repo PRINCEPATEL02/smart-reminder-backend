@@ -218,6 +218,112 @@ const resetDailyCompletions = asyncHandler(async (req, res) => {
     res.json({ message: 'Tasks reset for new day' });
 });
 
+// @desc    Get task statistics
+// @route   GET /api/tasks/stats
+// @access  Private
+const getStats = asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    // Get all active tasks
+    const activeTasks = await Task.find({ user: userId, isActive: true });
+    const totalActiveTasks = activeTasks.length;
+
+    // Get today's date range
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Get completed tasks today
+    const completedToday = await History.countDocuments({
+        user: userId,
+        date: { $gte: today, $lt: tomorrow },
+        status: 'Completed',
+    });
+
+    // Calculate completion rate for today
+    const completionRate = totalActiveTasks > 0
+        ? Math.round((completedToday / totalActiveTasks) * 100)
+        : 0;
+
+    // Calculate streak (consecutive days with at least one completion)
+    let streak = 0;
+    const currentDate = new Date(today);
+
+    while (true) {
+        const dayStart = new Date(currentDate);
+        const dayEnd = new Date(currentDate);
+        dayEnd.setDate(dayEnd.getDate() + 1);
+
+        const dayCompleted = await History.countDocuments({
+            user: userId,
+            date: { $gte: dayStart, $lt: dayEnd },
+            status: 'Completed',
+        });
+
+        if (dayCompleted > 0) {
+            streak++;
+            currentDate.setDate(currentDate.getDate() - 1);
+        } else {
+            // If today has no completions yet, check if we just started
+            if (currentDate.getTime() === today.getTime()) {
+                currentDate.setDate(currentDate.getDate() - 1);
+                continue;
+            }
+            break;
+        }
+
+        // Safety limit to prevent infinite loop
+        if (streak > 365) break;
+    }
+
+    // Get weekly progress (last 7 days)
+    const weekStart = new Date(today);
+    weekStart.setDate(weekStart.getDate() - 6);
+
+    const weeklyHistory = await History.aggregate([
+        {
+            $match: {
+                user: userId,
+                date: { $gte: weekStart },
+                status: 'Completed',
+            }
+        },
+        {
+            $group: {
+                _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { _id: 1 } }
+    ]);
+
+    // Create weekly progress array
+    const weeklyProgress = [];
+    for (let i = 0; i < 7; i++) {
+        const day = new Date(weekStart);
+        day.setDate(day.getDate() + i);
+        const dayStr = day.toISOString().split('T')[0];
+        const dayData = weeklyHistory.find(h => h._id === dayStr);
+
+        weeklyProgress.push({
+            date: day,
+            dayName: day.toLocaleDateString('en-US', { weekday: 'short' }),
+            dayNum: day.getDate(),
+            isToday: day.toDateString() === today.toDateString(),
+            completed: dayData ? dayData.count : 0,
+        });
+    }
+
+    res.json({
+        totalActiveTasks,
+        completedToday,
+        streak,
+        completionRate,
+        weeklyProgress,
+    });
+});
+
 module.exports = {
     getTasks,
     getTaskById,
@@ -227,4 +333,5 @@ module.exports = {
     markTaskComplete,
     getTodayCompletedTasks,
     resetDailyCompletions,
+    getStats,
 };

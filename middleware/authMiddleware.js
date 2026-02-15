@@ -16,6 +16,11 @@ const protect = asyncHandler(async (req, res, next) => {
             token = authHeader.split(' ')[1];
             console.log('Token extracted:', token ? 'Yes' : 'No');
 
+            // DEBUG: Log the JWT_SECRET being used
+            console.log('JWT_SECRET from env:', process.env.JWT_SECRET);
+            console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 'UNDEFINED');
+            console.log('Token payload:', JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()));
+
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
             req.user = await User.findById(decoded.id).select('-password');

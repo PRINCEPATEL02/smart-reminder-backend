@@ -6,6 +6,10 @@ const connectDB = require('./config/db');
 // Load environment variables
 dotenv.config();
 
+// DEBUG: Log JWT_SECRET immediately after loading dotenv
+console.log('🔍 Server startup - JWT_SECRET:', process.env.JWT_SECRET);
+console.log('🔍 Server startup - JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 'UNDEFINED');
+
 // Connect to MongoDB
 connectDB();
 
