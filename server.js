@@ -11,12 +11,16 @@ connectDB();
 
 const app = express();
 
-// Middleware - Simple CORS for production
+app.use(express.json());
+
+// Simple CORS for production - no credentials needed
 app.use(cors({
     origin: "*",
-    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
-app.use(express.json());
+
+app.options("*", cors());
 
 // Routes
 app.use('/api/auth', require('./routes/authRoutes'));
