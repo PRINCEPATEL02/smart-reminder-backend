@@ -6,10 +6,6 @@ const connectDB = require('./config/db');
 // Load environment variables
 dotenv.config();
 
-// DEBUG: Log JWT_SECRET immediately after loading dotenv
-console.log('🔍 Server startup - JWT_SECRET:', process.env.JWT_SECRET);
-console.log('🔍 Server startup - JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 'UNDEFINED');
-
 // Connect to MongoDB
 connectDB();
 
@@ -23,14 +19,22 @@ app.use(cors({
         const allowedOrigins = [
             'http://localhost:5173',
             'http://localhost:3000',
+            'http://127.0.0.1:5173',
             'https://smart-reminder-frontend.onrender.com',
+            'https://smart-reminder-frontend-*.onrender.com',
             undefined
         ];
 
-        // In development, origin might be undefined
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Check if origin matches any allowed pattern (including wildcard subdomains)
+        const isAllowed = !origin || allowedOrigins.some(allowed =>
+            allowed === origin ||
+            (allowed?.includes('*') && new RegExp(allowed.replace('*', '.*')).test(origin))
+        );
+
+        if (isAllowed) {
             callback(null, true);
         } else {
+            console.log('CORS blocked origin:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
@@ -64,6 +68,10 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5001;
 
 app.listen(PORT, () => {
+    const isProduction = process.env.NODE_ENV === 'production';
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📱 Smart Reminder API ready at http://localhost:${PORT}`);
+    console.log(isProduction
+        ? `🌐 Smart Reminder API ready at https://smart-reminder-backend-cg3w.onrender.com`
+        : `📱 Smart Reminder API ready at http://localhost:${PORT}`
+    );
 });

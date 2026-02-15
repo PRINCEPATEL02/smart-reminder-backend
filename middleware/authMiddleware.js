@@ -8,18 +8,9 @@ const protect = asyncHandler(async (req, res, next) => {
     // Check for Authorization header (case-insensitive)
     const authHeader = req.headers.authorization || req.headers.Authorization;
 
-    // DEBUG: Log the authorization header (remove in production)
-    console.log('Auth header:', authHeader);
-
     if (authHeader && (authHeader.startsWith('Bearer ') || authHeader.startsWith('bearer '))) {
         try {
             token = authHeader.split(' ')[1];
-            console.log('Token extracted:', token ? 'Yes' : 'No');
-
-            // DEBUG: Log the JWT_SECRET being used
-            console.log('JWT_SECRET from env:', process.env.JWT_SECRET);
-            console.log('JWT_SECRET length:', process.env.JWT_SECRET ? process.env.JWT_SECRET.length : 'UNDEFINED');
-            console.log('Token payload:', JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()));
 
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
