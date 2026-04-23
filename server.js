@@ -22,10 +22,20 @@ connectDB();
 const app = express();
 const httpServer = http.createServer(app);
 
+// ── Allowed Origins (supports multiple, comma-separated in CLIENT_URL) ─────────
+// e.g. CLIENT_URL="http://localhost:5173,https://smart-reminder-frontend-new.onrender.com"
+const ALLOWED_ORIGINS = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map((o) => o.trim())
+  : [
+      'http://localhost:5173',
+      'https://smart-reminder-frontend-new.onrender.com',
+      'https://smart-reminder.vercel.app',
+    ];
+
 // ── Socket.IO Setup ───────────────────────────────────────────────────────────
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: ALLOWED_ORIGINS,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -69,9 +79,20 @@ app.set('io', io);
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
-  credentials: true,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: Origin '${origin}' not allowed`));
+    }
+  },
+  credentials: true,          // ← required for cross-domain cookies
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+// Ensure preflight requests are handled for all routes
+app.options('*', cors());
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true }));
 
