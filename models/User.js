@@ -53,6 +53,11 @@ const userSchema = new mongoose.Schema(
       push: { type: Boolean, default: true },
       advanceMinutes: { type: Number, default: 15 },
     },
+    habitData: {
+      currentDailyStreak: { type: Number, default: 0 },
+      bestDailyStreak: { type: Number, default: 0 },
+      lastCompletedHabitDate: { type: String, default: null },
+    },
     darkMode: { type: Boolean, default: false },
   },
   { timestamps: true }

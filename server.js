@@ -15,6 +15,7 @@ const reminderRoutes = require('./routes/reminders');
 const analyticsRoutes = require('./routes/analytics');
 const Reminder = require('./models/Reminder');
 const User = require('./models/User');
+const { normalizeHabitReminders } = require('./utils/habitScheduler');
 
 // Connect Database
 connectDB();
@@ -165,6 +166,16 @@ app.use((err, req, res, next) => {
 // Every minute: check for due reminders and send real-time notifications
 cron.schedule('* * * * *', async () => {
   try {
+    const users = await User.find({}, '_id notificationPreferences.advanceMinutes');
+    for (const user of users) {
+      const habits = await Reminder.find({
+        user: user._id,
+        isHabit: true,
+        recurrence: { $in: ['daily', 'weekly', 'monthly'] },
+      });
+      await normalizeHabitReminders(habits, user.notificationPreferences?.advanceMinutes || 15);
+    }
+
     const now = new Date();
     const oneMinuteLater = new Date(now.getTime() + 60 * 1000);
 

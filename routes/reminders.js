@@ -7,17 +7,95 @@ const { protect } = require('../middleware/auth');
 const {
   suggestReminderTimes,
   autoReschedule,
-  detectMissedReminders,
   calculateNotificationTime,
 } = require('../utils/smartScheduler');
+const {
+  isHabit,
+  rollHabitForward,
+  completeHabit,
+  normalizeHabitReminders,
+} = require('../utils/habitScheduler');
 
 // All routes require authentication
 router.use(protect);
+
+const syncUserHabits = async (user) => {
+  const habits = await Reminder.find({
+    user: user._id,
+    isHabit: true,
+    recurrence: { $in: ['daily', 'weekly', 'monthly'] },
+  });
+
+  const advanceMinutes = user.notificationPreferences?.advanceMinutes || 15;
+  await normalizeHabitReminders(habits, advanceMinutes);
+};
+
+const formatDateKey = (date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (date, days) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const updateDailyHabitStreak = async (userId, date = new Date()) => {
+  const user = await User.findById(userId);
+  if (!user) return null;
+
+  const dateKey = formatDateKey(date);
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(date);
+  end.setHours(23, 59, 59, 999);
+
+  const dailyHabits = await Reminder.find({
+    user: userId,
+    isHabit: true,
+    recurrence: 'daily',
+    dueDate: { $gte: start, $lte: end },
+  }).select('status');
+
+  if (!dailyHabits.length) {
+    return user;
+  }
+
+  const yesterdayKey = formatDateKey(addDays(date, -1));
+  const lastCompletedKey = user.habitData?.lastCompletedHabitDate;
+
+  if (lastCompletedKey && lastCompletedKey !== dateKey && lastCompletedKey !== yesterdayKey) {
+    user.habitData.currentDailyStreak = 0;
+  }
+
+  const allCompleted = dailyHabits.every((habit) => habit.status === 'completed');
+
+  if (allCompleted && lastCompletedKey !== dateKey) {
+    user.habitData.currentDailyStreak =
+      lastCompletedKey === yesterdayKey
+        ? (user.habitData.currentDailyStreak || 0) + 1
+        : 1;
+    user.habitData.bestDailyStreak = Math.max(
+      user.habitData.bestDailyStreak || 0,
+      user.habitData.currentDailyStreak
+    );
+    user.habitData.lastCompletedHabitDate = dateKey;
+  }
+
+  await user.save({ validateBeforeSave: false });
+  return user;
+};
 
 // ─── GET /api/reminders ───────────────────────────────────────────────────────
 // Supports: pagination, filtering by status/priority/category, date range
 router.get('/', async (req, res) => {
   try {
+    await syncUserHabits(req.user);
+    await updateDailyHabitStreak(req.user._id);
+
     const {
       page = 1,
       limit = 20,
@@ -82,6 +160,9 @@ router.get('/', async (req, res) => {
 // ─── GET /api/reminders/today ─────────────────────────────────────────────────
 router.get('/today', async (req, res) => {
   try {
+    await syncUserHabits(req.user);
+    await updateDailyHabitStreak(req.user._id);
+
     const start = new Date();
     start.setHours(0, 0, 0, 0);
     const end = new Date();
@@ -101,6 +182,9 @@ router.get('/today', async (req, res) => {
 // ─── GET /api/reminders/upcoming ─────────────────────────────────────────────
 router.get('/upcoming', async (req, res) => {
   try {
+    await syncUserHabits(req.user);
+    await updateDailyHabitStreak(req.user._id);
+
     const { days = 7 } = req.query;
     const start = new Date();
     const end = new Date();
@@ -132,6 +216,9 @@ router.get('/smart-suggestions', async (req, res) => {
 // ─── GET /api/reminders/missed ────────────────────────────────────────────────
 router.get('/missed', async (req, res) => {
   try {
+    await syncUserHabits(req.user);
+    await updateDailyHabitStreak(req.user._id);
+
     const reminders = await Reminder.find({
       user: req.user._id,
       status: { $in: ['pending', 'missed'] },
@@ -147,6 +234,9 @@ router.get('/missed', async (req, res) => {
 // ─── GET /api/reminders/:id ───────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
+    await syncUserHabits(req.user);
+    await updateDailyHabitStreak(req.user._id);
+
     const reminder = await Reminder.findOne({
       _id: req.params.id,
       user: req.user._id,
@@ -169,6 +259,7 @@ const createValidation = [
   body('priority').optional().isIn(['low', 'medium', 'high', 'urgent']),
   body('category').optional().isIn(['work', 'personal', 'health', 'finance', 'education', 'other']),
   body('recurrence').optional().isIn(['none', 'daily', 'weekly', 'monthly']),
+  body('isHabit').optional().isBoolean(),
 ];
 
 router.post('/', createValidation, async (req, res) => {
@@ -180,11 +271,17 @@ router.post('/', createValidation, async (req, res) => {
   try {
     const {
       title, description, dueDate, priority, category,
-      tags, recurrence, advanceMinutes,
+      tags, recurrence, advanceMinutes, isHabit: habitFlag,
     } = req.body;
 
     const notifMinutes = advanceMinutes || req.user.notificationPreferences?.advanceMinutes || 15;
     const parsedDue = new Date(dueDate);
+    const isHabitReminder = Boolean(habitFlag);
+    const normalizedRecurrence = isHabitReminder ? (recurrence || 'daily') : (recurrence || 'none');
+
+    if (isHabitReminder && normalizedRecurrence === 'none') {
+      return res.status(400).json({ success: false, message: 'Habits must repeat daily, weekly, or monthly' });
+    }
 
     const reminder = await Reminder.create({
       user: req.user._id,
@@ -194,7 +291,8 @@ router.post('/', createValidation, async (req, res) => {
       priority: priority || 'medium',
       category: category || 'other',
       tags: tags || [],
-      recurrence: recurrence || 'none',
+      isHabit: isHabitReminder,
+      recurrence: normalizedRecurrence,
       notificationTime: calculateNotificationTime(parsedDue, notifMinutes),
     });
 
@@ -231,7 +329,7 @@ router.put('/:id', async (req, res) => {
 
     const allowedUpdates = [
       'title', 'description', 'dueDate', 'priority',
-      'category', 'status', 'tags', 'recurrence',
+      'category', 'status', 'tags', 'recurrence', 'isHabit',
     ];
 
     allowedUpdates.forEach((field) => {
@@ -240,8 +338,28 @@ router.put('/:id', async (req, res) => {
       }
     });
 
+    if (reminder.isHabit && reminder.recurrence === 'none') {
+      reminder.recurrence = 'daily';
+    }
+
+    const notifMinutes = req.user.notificationPreferences?.advanceMinutes || 15;
+    rollHabitForward(reminder, new Date(), notifMinutes);
+
     // If marking as completed
-    if (req.body.status === 'completed' && !reminder.completedAt) {
+    if (req.body.status === 'completed' && reminder.isHabit) {
+      const alreadyCompletedThisPeriod =
+        reminder.completedAt &&
+        reminder.status === 'completed';
+
+      completeHabit(reminder, new Date());
+
+      if (!alreadyCompletedThisPeriod) {
+        const user = await User.findById(req.user._id);
+        user.updateBehavior(new Date(reminder.dueDate).getHours(), true);
+        await user.save({ validateBeforeSave: false });
+      }
+      await updateDailyHabitStreak(req.user._id, reminder.dueDate);
+    } else if (req.body.status === 'completed' && !reminder.completedAt) {
       reminder.completedAt = new Date();
       const user = await User.findById(req.user._id);
       user.updateBehavior(new Date().getHours(), true);
@@ -258,8 +376,8 @@ router.put('/:id', async (req, res) => {
 
     // Update notification time if due date changed
     if (req.body.dueDate) {
-      const notifMinutes = req.user.notificationPreferences?.advanceMinutes || 15;
       reminder.notificationTime = calculateNotificationTime(new Date(req.body.dueDate), notifMinutes);
+      reminder.notificationSent = false;
     }
 
     await reminder.save();

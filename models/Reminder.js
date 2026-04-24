@@ -43,6 +43,11 @@ const reminderSchema = new mongoose.Schema(
       index: true,
     },
     tags: [{ type: String, trim: true }],
+    isHabit: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     // Recurrence
     recurrence: {
       type: String,
@@ -58,6 +63,10 @@ const reminderSchema = new mongoose.Schema(
     notificationTime: { type: Date },
     // Completion tracking
     completedAt: { type: Date },
+    lastCompletedAt: { type: Date },
+    lastCompletedPeriodKey: { type: String },
+    streakCurrent: { type: Number, default: 0 },
+    streakBest: { type: Number, default: 0 },
     // For missed task detection
     missedAt: { type: Date },
     rescheduleCount: { type: Number, default: 0 },

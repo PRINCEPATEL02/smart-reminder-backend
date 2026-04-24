@@ -27,6 +27,8 @@ router.get('/summary', async (req, res) => {
     const user = await User.findById(req.user._id);
     analytics.preferredHours = user.behaviorData.preferredHours;
     analytics.avgCompletionRate = user.behaviorData.avgCompletionRate;
+    analytics.dailyHabitStreak = user.habitData?.currentDailyStreak || 0;
+    analytics.bestDailyHabitStreak = user.habitData?.bestDailyStreak || 0;
 
     res.json({ success: true, data: analytics });
   } catch (error) {

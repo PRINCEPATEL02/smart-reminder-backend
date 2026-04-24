@@ -52,6 +52,7 @@ router.post('/register', registerValidation, async (req, res) => {
         email: user.email,
         darkMode: user.darkMode,
         notificationPreferences: user.notificationPreferences,
+        habitData: user.habitData,
       },
     });
   } catch (error) {
@@ -99,6 +100,7 @@ router.post('/login', loginValidation, async (req, res) => {
         email: user.email,
         darkMode: user.darkMode,
         notificationPreferences: user.notificationPreferences,
+        habitData: user.habitData,
         behaviorData: {
           avgCompletionRate: user.behaviorData.avgCompletionRate,
           totalCreated: user.behaviorData.totalCreated,
